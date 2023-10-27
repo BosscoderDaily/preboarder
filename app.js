@@ -21,7 +21,7 @@
   const isArSessionSupported =
       navigator.xr &&
       navigator.xr.isSessionSupported &&
-      await navigator.xr.isSessionSupported("immersive-ar");
+      await navigator.xr.isSessionSupported("inline");
   if (isArSessionSupported) {
     document.getElementById("enter-ar").addEventListener("click", window.app.activateXR)
   } else {
