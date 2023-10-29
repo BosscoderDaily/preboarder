@@ -1,61 +1,287 @@
-<!doctype html>
-<!--
-/*
- * Copyright 2021 Google Inc. All Rights Reserved.
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
--->
-<html>
-  <head>
-    <meta charset="utf-8">
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Building an augmented reality application with the WebXR Device API</title>
-    <link rel="stylesheet" href="https://unpkg.com/material-components-web@latest/dist/material-components-web.min.css">
-    <script src="https://unpkg.com/material-components-web@latest/dist/material-components-web.min.js"></script>
+    <title>Fractured Hand Detection and QR Code Scanner</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.0.0/dist/jsQR.min.js"></script>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter">
 
-    <!-- three.js -->
-    <script src="https://unpkg.com/three@0.126.0/build/three.js"></script>
-    <script src="https://unpkg.com/three@0.126.0/examples/js/loaders/GLTFLoader.js"></script>
+    <style>
+        #swapp{
+    
+  background-color:#ACC7B4;
+  border: none;
+  font-size: 16px;
+  color:#331B3F;
+  padding: 10px;
+  border-radius:10px;
+  
+  font-family:Inter;
 
-    <link rel="stylesheet" type="text/css" href="./shared/app.css" />
-    <script src="./shared/utils.js"></script>
-  </head>
-  <body>
-    <div id="wrong-hosting-root" class="mdc-card demo-card" style="height:2000px">
-      <h2>Wrong hosting root</h2>
-      <p>
-        This application was hosted incorrectly: <code>../shared/app.css</code> could not be found.
-      </p>
-      <p>Make sure you're hosting the entire project root, and not just this folder. The url you're using to access this file should look something like <code>http://localhost:8080/workshop/index.html</code>.</p>
-    </div>
-    <div id="enter-ar-info" class="mdc-card demo-card">
-      <h2>Augmented Reality with the WebXR Device API</h2>
-      <p>
-       Welcome to our app. When you are ready to start using, click on the start button and point the app towards a flat surface, once a surface is recognized, grow as many flowers as you want and make ur place look beautiful!!   </p>
+  text-align: center;
+  transition-duration: 0.4s;
+  text-decoration: none;
+  overflow: hidden;
+  cursor: pointer;
+        }
+       
 
-      <!-- Starting an immersive WebXR session requires user interaction. Start the WebXR experience with a simple button. -->
-      <a id="enter-ar" class="mdc-button mdc-button--raised mdc-button--accent">
-        Start Growing Plants
-      </a>
-    </div>
+        #result,#output{
+            color:#ACC7B4;
+            font-family: Inter;
+            font-size: medium;
+            font-weight: 500;
+        }
+        body{
+            text-align: center;
+            background-color: #331B3F;
 
-    <div id="unsupported-info" class="mdc-card demo-card">
-      <h2>Unsupported Browser</h2>
-      <p>
-        Your browser does not support AR features with WebXR. Please Swtich to any mobile device with Chrome Browser or AR services supporting browser.
-      </p>
-    </div>
-    <script src="app.js"></script>
-    <div id="stabilization"></div>
-  </body>
+        }
+       .h1{
+        font-family: 'Lucida Sans', 'Lucida Sans Regular', 'Lucida Grande', 'Lucida Sans Unicode', Geneva, Verdana, sans-serif;
+        align-items: center;
+        text-align: center;
+        color:#ACC7B4
+
+       }
+       .forme{
+        border-radius: 10px;
+        border-width: 0px;
+        background-color: #ACC7B4;
+        color:#331B3F;
+        height:39px;
+        width:120px;
+        vertical-align: middle;
+font-family: Inter;
+font-weight: bolder;
+        
+       }
+    
+
+    </style>
+</head>
+<body>
+    <h1 class="h1">Fractured Hand Detection and QR Code Scanner</h1>
+    <div id="result"></div>
+    <div id="output"></div>
+    <video id="video" style="max-width: 100%;" autoplay playsinline></video>
+    <form id="myForm" class = "forma">
+        <input type="file" id="csvFile" accept=".csv" />
+        <br /><br>
+        <input type="submit" value="Submit" class="forme" id="subb" />
+     </form>
+
+    <script>
+        const video = document.getElementById('video');
+        const result = document.getElementById('result');
+        let qrScannerActive = false;
+        let coder="";
+        let height=0;   
+
+        const myForm = document.getElementById("myForm");
+        const csvFile = document.getElementById("csvFile");
+        myForm.addEventListener("submit", function (e) {
+         e.preventDefault();
+         const input = csvFile.files[0];
+         const reader = new FileReader();
+         reader.onload = function (e) {
+            const text = e.target.result;
+            height=text;
+            //document.write(text);
+         };
+         reader.readAsText(input);
+        });
+
+        // Load the MobileNet model for fractured hand detection
+        async function loadModel() {
+            const model = await mobilenet.load();
+            const videoElement = document.getElementById('video');
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                videoElement.srcObject = stream;
+            } catch (error) {
+                console.error("Error accessing the camera: ", error);
+            }
+
+            setInterval(async () => {
+                if (qrScannerActive) {
+                    result.innerText = 'QR Code Scanner: Scanning...';
+                    const code = await scanQRCode();
+                    if (code) {
+                        processQRCodeData(code);
+                    }
+                } else {
+                    result.innerText = 'Fractured Hand Detection: Predicting...';
+                    const predictions = await predictFracturedHand(model);
+                    if (predictions) {
+                        processFracturedHandPredictions(predictions);
+                        coder = predictions[0].className;
+
+                    }
+                }
+            }, 5000); // Update every 5 seconds
+        }
+
+        // Function to predict fractured hand using MobileNet model
+        async function predictFracturedHand(model) {
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const context = canvas.getContext('2d');
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const tensor = tf.browser.fromPixels(canvas);
+            const predictions = await model.classify(tensor);
+            return predictions;
+        }
+
+        // Function to scan QR code using jsQR library
+        async function scanQRCode() {
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const context = canvas.getContext('2d');
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+            const code = jsQR(imageData.data, imageData.width, imageData.height);
+            return code;
+        }
+
+        // Process predictions from fractured hand detection
+        function processFracturedHandPredictions(predictions) {
+            const predictedObject = predictions[0].className;
+            disability = predictedObject;
+            result.innerText = `Prediction: ${predictedObject} (Confidence: ${predictions[0].probability.toFixed(2)})`;
+        }
+
+        // Process data extracted from QR code
+        function processQRCodeData(code) {
+            if (code) {
+                const scannedData = code.data;
+                result.innerText = `Scanned Data: ${scannedData}`;
+                const variables = extractVariables(scannedData);
+                if (variables) {
+                    result.innerHTML += "<br>Extracted Variables: " + JSON.stringify(variables);
+                    displayVariables(variables);
+                    useExtractedVariables(variables);
+                }
+            } else {
+                result.innerText = 'QR code not found.';
+            }
+        }
+
+        // Extract variables and their values from the QR code data
+        function extractVariables(data) {
+            const keyValuePairs = data.split('&');
+            const variables = {};
+            keyValuePairs.forEach(pair => {
+                const [key, value] = pair.split('=');
+                variables[key] = value;
+            });
+            return variables;
+        }
+
+        // Function to display variables
+        function displayVariables(variables) {
+            result.innerHTML += "<br>QR Code Variables:<br>";
+            for (const key in variables) {
+                result.innerHTML += `${key}: ${variables[key]}<br>`;
+            }
+        }
+        
+
+        // Function to use extracted variables in your logic
+        function useExtractedVariables(variables) {
+            let disability=coder;
+            let age = parseInt(variables.age);
+            let family = parseInt(variables.family);
+            let seat;
+            let child = parseInt(variables.child);
+            
+            if (disability=="Band aid" || disability=="paper towel" || disability=="diaper,Nappy,Napkin" || disability=="neck brace" || disability=="crutch" || disability =="Seat belt")
+        {
+            seat=5;
+            console.log("disabled")
+        }
+        else if (age>=50)
+        {
+            seat=5;
+            console.log("elderly")
+        }
+        else if(family==1)
+        {
+            if(child==1)
+            {
+                if(height>=190)
+                {
+                    seat=5;
+                    console.log("family with child and height")
+                }
+                else
+                {
+                    seat=6;
+                    console.log("family with child not height");
+                }
+                
+            }
+            else
+            {
+                if(height>=190)
+                {
+                    seat=3;
+                    console.log("family without child and height")
+                }
+                else
+                {
+                    seat=4;
+                    console.log("family without child and no height");
+                }
+                
+            }
+        }
+        else if(height>=190)
+        {
+            seat=1;
+            
+
+        }
+        else
+        {
+            seat=2;
+        }
+
+
+            result.innerHTML += `<br>Calculated Seat: ${seat}`;
+            console.log(seat);
+        if (disability=="Band aid" || disability=="paper towel" || disability=="diaper,Nappy,Napkin" || disability=="neck brace" || disability=="crutch" || disability =="Seat belt" || age >=50)
+        {
+            console.log("Inclination");
+            var outputElement = document.getElementById("output")
+            var statement = "Adjust your seat inclination to approximately 15-20 degrees. It is recommended that you use a elevated headrest.";
+            outputElement.innerHTML=statement;
+        }
+        }
+        
+
+        // Function to swap between fractured hand detection and QR code scanning
+        function swapCamera() {
+            qrScannerActive = !qrScannerActive;
+            if (qrScannerActive) {
+                result.innerText = 'QR Code Scanner: Scanning...';
+            } else {
+                result.innerText = 'Fractured Hand Detection: Predicting...';
+            }
+        }
+
+        // Load the model and start the application
+        loadModel();
+        
+    </script>
+<br><br>
+    <button onclick="swapCamera()" id="swapp">Swap Camera</button>
+</body>
 </html>
